@@ -1,0 +1,51 @@
+#!/bin/bash
+set -ex
+
+UPSTREAM_GIT=https://github.com/ruby/ruby.git
+
+if [[ "${JOB_NAME}" == ruby-trunk* ]]; then
+  BRANCH=trunk
+  DEBTREE=http://ftp.de.debian.org/debian/pool/main/r/ruby2.1/ruby2.1_2.1.2-3.debian.tar.xz
+  DEBTREE_CKSUM=fd75843b046ffdd29efa3763fc7194e43a2374005f39f4f6d5831987b45aa381
+else
+  true
+fi
+
+DEBTREE_NAME=$(basename "$DEBTREE")
+
+download_source() {
+  curl -O $DEBTREE
+  echo "$DEBTREE_CKSUM $DEBTREE_NAME" | sha256sum -
+  git clone $UPSTREAM_GIT
+}
+
+git clean -fdx
+
+download_source
+
+cd ruby
+tar xf ../$DEBTREE_NAME
+
+# no git-buildpackage here
+rm -f debian/gbp.conf
+
+UPSTREAM_VERSION=$(get_version)
+# Mangle the upstream version into an acceptable format (needs to start with a digit)
+if [ -z "$(echo ${UPSTREAM_VERSION} | egrep '^[0-9]')" ]; then
+  UPSTREAM_VERSION="0.0-${UPSTREAM_VERSION}"
+fi
+
+# fix our changelog
+cat >${PKG_NAME}/debian/changelog <<EOT
+${PKG_NAME} (${UPSTREAM_VERSION}-0+deduktiva) autotest; urgency=medium
+
+  * Automated build based on upstream version ${UPSTREAM_VERSION}.
+
+ -- Deduktiva Autobuild <inhuman@deduktiva.com>  $(date --rfc-2822)
+EOT
+
+# make an orig.tgz
+ln -s $fn ${PKG_NAME}_${UPSTREAM_VERSION}.orig.${TAR_FORMAT}
+
+# go build debian sources
+dpkg-source -i -I -b ${PKG_NAME}
